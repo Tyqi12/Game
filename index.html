@@ -3,78 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>赛车模拟器 - 比赛专用版</title>
+    <title>Racing Simulator - Competition Edition</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000; }
-        #canvas-container { width: 100vw; height: 100vh; }
-        
-        /* 仪表盘 UI */
+        body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; }
+        #loading-screen {
+            position: absolute; width: 100%; height: 100%; background: #000;
+            color: #0ff; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+        }
         #dashboard {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; align-items: flex-end; gap: 20px; pointer-events: none;
+            display: flex; gap: 20px; pointer-events: none;
         }
         .gauge {
-            background: rgba(0, 0, 0, 0.7); border: 2px solid #0ff; border-radius: 50%;
-            width: 120px; height: 120px; display: flex; flex-direction: column;
-            justify-content: center; align-items: center; color: #0ff;
+            background: rgba(0, 0, 0, 0.8); border: 2px solid #0ff; border-radius: 50%;
+            width: 100px; height: 100px; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: #0ff; box-shadow: 0 0 15px #0ff;
         }
-        .speed-val { font-size: 24px; font-weight: bold; }
-        
-        /* 控制按钮 - 移动端 */
-        #mobile-controls {
-            position: absolute; bottom: 30px; width: 100%; display: flex;
-            justify-content: space-between; padding: 0 40px; box-sizing: border-box;
-            display: none; /* 默认隐藏，JS检测触摸屏后显示 */
-        }
-        .btn {
-            width: 70px; height: 70px; background: rgba(255,255,255,0.2);
-            border-radius: 10px; display: flex; justify-content: center; align-items: center;
-            color: white; font-weight: bold; user-select: none;
-        }
-
-        /* 天气/车辆切换菜单 */
         #menu {
-            position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.6);
-            padding: 15px; border-radius: 8px; color: white;
+            position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7);
+            padding: 15px; border-radius: 8px; color: #fff; z-index: 10;
         }
-        select, button { margin-top: 5px; cursor: pointer; }
+        button { background: #333; color: white; border: 1px solid #555; padding: 5px 10px; cursor: pointer; margin: 2px; }
+        button:hover { background: #0ff; color: #000; }
+        #mobile-controls {
+            position: absolute; bottom: 20px; width: 100%; display: none;
+            justify-content: space-between; padding: 0 30px; box-sizing: border-box;
+        }
+        .btn { width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: white; user-select: none; }
     </style>
 </head>
 <body>
 
+<div id="loading-screen">
+    <h2>正在加载赛车资源...</h2>
+    <p id="load-status">准备中</p>
+</div>
+
 <div id="menu">
-    <div>车辆切换: 
-        <button onclick="switchVehicle(0)">Shift Tuner</button>
-        <button onclick="switchVehicle(1)">C7 Tuner</button>
-    </div>
-    <div style="margin-top: 10px;">天气控制:
-        <select id="weatherSelect" onchange="changeWeather(this.value)">
-            <option value="sunny">晴天</option>
-            <option value="rainy">雨天</option>
-            <option value="night">夜晚</option>
-        </select>
-    </div>
+    <div style="margin-bottom:8px"><b>车辆切换</b></div>
+    <button onclick="switchVehicle(0)">Shift Tuner (Orange)</button>
+    <button onclick="switchVehicle(1)">C7 Tuner (Orange)</button>
+    <div style="margin: 10px 0 8px 0"><b>环境与天气</b></div>
+    <select id="weatherSelect" onchange="updateEnvironment(this.value)">
+        <option value="sunny">晴天 (Sunny)</option>
+        <option value="rainy">雨天 (Rainy)</option>
+        <option value="night">夜晚 (Night)</option>
+    </select>
 </div>
 
 <div id="dashboard">
-    <div class="gauge">
-        <span class="speed-val" id="speed">0</span>
-        <span>KM/H</span>
-    </div>
+    <div class="gauge"><span style="font-size: 20px;" id="speed">0</span><span>KM/H</span></div>
 </div>
 
 <div id="mobile-controls">
-    <div class="left-group">
-        <div class="btn" id="btn-left">←</div>
-        <div class="btn" id="btn-right" style="margin-top:10px">→</div>
-    </div>
-    <div class="right-group">
-        <div class="btn" id="btn-gas">加速</div>
-        <div class="btn" id="btn-brake" style="margin-top:10px">刹车</div>
-    </div>
+    <div><div class="btn" id="btn-left">←</div><div class="btn" id="btn-right" style="margin-top:10px">→</div></div>
+    <div><div class="btn" id="btn-gas">加速</div><div class="btn" id="btn-brake" style="margin-top:10px">刹车</div></div>
 </div>
-
-<div id="canvas-container"></div>
 
 <script type="importmap">
     {
@@ -88,135 +73,129 @@
 <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    // --- 初始化场景 ---
+    // --- 场景设置 ---
     const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
-    document.getElementById('canvas-container').appendChild(renderer.domElement);
+    document.body.appendChild(renderer.domElement);
 
     // 灯光
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
     sunLight.position.set(50, 100, 50);
     sunLight.castShadow = true;
     scene.add(sunLight);
-    scene.add(new THREE.AmbientLight(0x404040, 2));
 
-    // --- 城市地图设计 (基于你的描述) ---
-    function createMap() {
-        // 地板 (草地)
-        const ground = new THREE.Mesh(
-            new THREE.PlaneGeometry(200, 200),
-            new THREE.MeshStandardMaterial({ color: 0x228B22 })
-        );
-        ground.rotation.x = -Math.PI / 2;
-        ground.receiveShadow = true;
-        scene.add(ground);
+    // --- 地图生成 (根据图片描述) ---
+    const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a5e1a });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
 
-        // 灰色道路 (俯瞰图逻辑)
-        const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
-        const road = new THREE.Mesh(new THREE.PlaneGeometry(180, 20), roadMaterial);
-        road.rotation.x = -Math.PI / 2;
-        road.position.y = 0.01;
-        scene.add(road);
+    // 灰色道路
+    const roadGeo = new THREE.PlaneGeometry(20, 1000);
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const road = new THREE.Mesh(roadGeo, roadMat);
+    road.rotation.x = -Math.PI / 2;
+    road.position.y = 0.02;
+    scene.add(road);
 
-        // 建筑物 (白色区域)
-        const buildMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-        for(let i=0; i<10; i++) {
-            const h = Math.random() * 10 + 5;
-            const b = new THREE.Mesh(new THREE.BoxGeometry(10, h, 10), buildMat);
-            b.position.set(Math.random()*100 - 50, h/2, Math.random()*50 + 20);
-            b.castShadow = true;
-            scene.add(b);
-        }
+    // 建筑物 (白色区域)
+    for(let i=0; i<30; i++) {
+        const h = 10 + Math.random() * 20;
+        const b = new THREE.Mesh(new THREE.BoxGeometry(15, h, 15), new THREE.MeshStandardMaterial({color: 0xffffff}));
+        b.position.set(Math.random() > 0.5 ? 30 : -30, h/2, (Math.random()-0.5)*400);
+        b.castShadow = true;
+        scene.add(b);
     }
-    createMap();
 
     // --- 车辆逻辑 ---
-    let currentVehicle = null;
-    let vehicles = ["Shift Tuner Orange.glb", "C7 tuner car orange.glb"];
+    let car = null;
+    let velocity = 0;
     const loader = new GLTFLoader();
+    const carFiles = ['Shift Tuner Orange.glb', 'C7 tuner car orange.glb'];
 
     window.switchVehicle = function(index) {
-        if(currentVehicle) scene.remove(currentVehicle);
-        loader.load(vehicles[index], (gltf) => {
-            currentVehicle = gltf.scene;
-            currentVehicle.position.set(0, 0, 0); // 星星出生点位置
-            currentVehicle.traverse(n => { if(n.isMesh) n.castShadow = true; });
-            scene.add(currentVehicle);
+        document.getElementById('loading-screen').style.display = 'flex';
+        if(car) scene.remove(car);
+        
+        loader.load(carFiles[index], (gltf) => {
+            car = gltf.scene;
+            car.traverse(c => { if(c.isMesh) c.castShadow = true; });
+            scene.add(car);
+            document.getElementById('loading-screen').style.display = 'none';
+        }, (xhr) => {
+            document.getElementById('load-status').innerText = Math.round(xhr.loaded / xhr.total * 100) + '%';
+        }, (error) => {
+            console.error('加载失败:', error);
+            alert('模型加载失败，请确认文件名大小写！');
         });
     };
-    switchVehicle(0);
 
-    // --- 天气控制 ---
-    const fog = new THREE.Fog(0xcccccc, 10, 100);
-    window.changeWeather = function(type) {
-        if(type === 'rainy') {
-            scene.fog = fog;
-            renderer.setClearColor(0x666666);
-        } else if(type === 'night') {
-            scene.fog = new THREE.Fog(0x000011, 1, 50);
-            renderer.setClearColor(0x000011);
+    // --- 环境逻辑 ---
+    window.updateEnvironment = function(val) {
+        if(val === 'rainy') {
+            scene.fog = new THREE.Fog(0x666666, 1, 100);
+            scene.background = new THREE.Color(0x666666);
+        } else if (val === 'night') {
+            scene.fog = new THREE.Fog(0x000000, 1, 50);
+            scene.background = new THREE.Color(0x020205);
             sunLight.intensity = 0.1;
         } else {
             scene.fog = null;
-            renderer.setClearColor(0x87CEEB);
-            sunLight.intensity = 1;
+            scene.background = new THREE.Color(0x87CEEB);
+            sunLight.intensity = 1.2;
         }
     };
 
-    // --- 驾驶物理模拟简易版 (用于演示) ---
-    let speed = 0;
+    // --- 操作逻辑 ---
     const keys = {};
-    window.addEventListener('keydown', e => keys[e.code] = true);
-    window.addEventListener('keyup', e => keys[e.code] = false);
+    window.onkeydown = (e) => keys[e.code] = true;
+    window.onkeyup = (e) => keys[e.code] = false;
 
-    function updatePhysics() {
-        if(!currentVehicle) return;
+    function update() {
+        if(!car) return;
 
-        // 基础驾驶手感逻辑
-        if (keys['KeyW'] || keys['ArrowUp']) speed += 0.01;
-        if (keys['KeyS'] || keys['ArrowDown']) speed -= 0.01;
-        speed *= 0.98; // 阻力
+        if(keys['ArrowUp'] || keys['KeyW']) velocity += 0.005;
+        if(keys['ArrowDown'] || keys['KeyS']) velocity -= 0.005;
+        
+        velocity *= 0.97; // 模拟阻力
+        car.translateZ(velocity);
 
-        currentVehicle.translateZ(speed);
+        if(keys['ArrowLeft'] || keys['KeyA']) car.rotation.y += 0.03 * (velocity > 0 ? 1 : -1);
+        if(keys['ArrowRight'] || keys['KeyD']) car.rotation.y -= 0.03 * (velocity > 0 ? 1 : -1);
 
-        if (keys['KeyA'] || keys['ArrowLeft']) currentVehicle.rotation.y += 0.03 * (speed > 0 ? 1 : -1);
-        if (keys['KeyD'] || keys['ArrowRight']) currentVehicle.rotation.y -= 0.03 * (speed > 0 ? 1 : -1);
-
-        // 更新仪表盘
-        document.getElementById('speed').innerText = Math.abs(Math.round(speed * 1000));
+        document.getElementById('speed').innerText = Math.abs(Math.round(velocity * 500));
 
         // 相机跟随
-        const relativeCameraOffset = new THREE.Vector3(0, 5, -10);
-        const cameraOffset = relativeCameraOffset.applyMatrix4(currentVehicle.matrixWorld);
-        camera.position.lerp(cameraOffset, 0.1);
-        camera.lookAt(currentVehicle.position);
+        const camPos = new THREE.Vector3(0, 4, -10).applyMatrix4(car.matrixWorld);
+        camera.position.lerp(camPos, 0.1);
+        camera.lookAt(car.position.clone().add(new THREE.Vector3(0, 1, 0)));
     }
 
-    // --- 动画循环 ---
     function animate() {
         requestAnimationFrame(animate);
-        updatePhysics();
+        update();
         renderer.render(scene, camera);
     }
-    
-    // 适配移动端检测
-    if('ontouchstart' in window) {
-        document.getElementById('mobile-controls').style.display = 'flex';
-    }
 
-    animate();
-
-    // 窗口大小适配
-    window.addEventListener('resize', () => {
+    window.onresize = () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    };
+
+    // 默认加载第一辆车
+    switchVehicle(0);
+    animate();
 
 </script>
 </body>
