@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>赛车模拟器 - 比赛专用版</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        
+        /* 仪表盘 UI */
+        #dashboard {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; align-items: flex-end; gap: 20px; pointer-events: none;
+        }
+        .gauge {
+            background: rgba(0, 0, 0, 0.7); border: 2px solid #0ff; border-radius: 50%;
+            width: 120px; height: 120px; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: #0ff;
+        }
+        .speed-val { font-size: 24px; font-weight: bold; }
+        
+        /* 控制按钮 - 移动端 */
+        #mobile-controls {
+            position: absolute; bottom: 30px; width: 100%; display: flex;
+            justify-content: space-between; padding: 0 40px; box-sizing: border-box;
+            display: none; /* 默认隐藏，JS检测触摸屏后显示 */
+        }
+        .btn {
+            width: 70px; height: 70px; background: rgba(255,255,255,0.2);
+            border-radius: 10px; display: flex; justify-content: center; align-items: center;
+            color: white; font-weight: bold; user-select: none;
+        }
+
+        /* 天气/车辆切换菜单 */
+        #menu {
+            position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.6);
+            padding: 15px; border-radius: 8px; color: white;
+        }
+        select, button { margin-top: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="menu">
+    <div>车辆切换: 
+        <button onclick="switchVehicle(0)">Shift Tuner</button>
+        <button onclick="switchVehicle(1)">C7 Tuner</button>
+    </div>
+    <div style="margin-top: 10px;">天气控制:
+        <select id="weatherSelect" onchange="changeWeather(this.value)">
+            <option value="sunny">晴天</option>
+            <option value="rainy">雨天</option>
+            <option value="night">夜晚</option>
+        </select>
+    </div>
+</div>
+
+<div id="dashboard">
+    <div class="gauge">
+        <span class="speed-val" id="speed">0</span>
+        <span>KM/H</span>
+    </div>
+</div>
+
+<div id="mobile-controls">
+    <div class="left-group">
+        <div class="btn" id="btn-left">←</div>
+        <div class="btn" id="btn-right" style="margin-top:10px">→</div>
+    </div>
+    <div class="right-group">
+        <div class="btn" id="btn-gas">加速</div>
+        <div class="btn" id="btn-brake" style="margin-top:10px">刹车</div>
+    </div>
+</div>
+
+<div id="canvas-container"></div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // --- 初始化场景 ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+    // 灯光
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+    sunLight.position.set(50, 100, 50);
+    sunLight.castShadow = true;
+    scene.add(sunLight);
+    scene.add(new THREE.AmbientLight(0x404040, 2));
+
+    // --- 城市地图设计 (基于你的描述) ---
+    function createMap() {
+        // 地板 (草地)
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(200, 200),
+            new THREE.MeshStandardMaterial({ color: 0x228B22 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 灰色道路 (俯瞰图逻辑)
+        const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+        const road = new THREE.Mesh(new THREE.PlaneGeometry(180, 20), roadMaterial);
+        road.rotation.x = -Math.PI / 2;
+        road.position.y = 0.01;
+        scene.add(road);
+
+        // 建筑物 (白色区域)
+        const buildMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+        for(let i=0; i<10; i++) {
+            const h = Math.random() * 10 + 5;
+            const b = new THREE.Mesh(new THREE.BoxGeometry(10, h, 10), buildMat);
+            b.position.set(Math.random()*100 - 50, h/2, Math.random()*50 + 20);
+            b.castShadow = true;
+            scene.add(b);
+        }
+    }
+    createMap();
+
+    // --- 车辆逻辑 ---
+    let currentVehicle = null;
+    let vehicles = ["Shift Tuner Orange.glb", "C7 tuner car orange.glb"];
+    const loader = new GLTFLoader();
+
+    window.switchVehicle = function(index) {
+        if(currentVehicle) scene.remove(currentVehicle);
+        loader.load(vehicles[index], (gltf) => {
+            currentVehicle = gltf.scene;
+            currentVehicle.position.set(0, 0, 0); // 星星出生点位置
+            currentVehicle.traverse(n => { if(n.isMesh) n.castShadow = true; });
+            scene.add(currentVehicle);
+        });
+    };
+    switchVehicle(0);
+
+    // --- 天气控制 ---
+    const fog = new THREE.Fog(0xcccccc, 10, 100);
+    window.changeWeather = function(type) {
+        if(type === 'rainy') {
+            scene.fog = fog;
+            renderer.setClearColor(0x666666);
+        } else if(type === 'night') {
+            scene.fog = new THREE.Fog(0x000011, 1, 50);
+            renderer.setClearColor(0x000011);
+            sunLight.intensity = 0.1;
+        } else {
+            scene.fog = null;
+            renderer.setClearColor(0x87CEEB);
+            sunLight.intensity = 1;
+        }
+    };
+
+    // --- 驾驶物理模拟简易版 (用于演示) ---
+    let speed = 0;
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function updatePhysics() {
+        if(!currentVehicle) return;
+
+        // 基础驾驶手感逻辑
+        if (keys['KeyW'] || keys['ArrowUp']) speed += 0.01;
+        if (keys['KeyS'] || keys['ArrowDown']) speed -= 0.01;
+        speed *= 0.98; // 阻力
+
+        currentVehicle.translateZ(speed);
+
+        if (keys['KeyA'] || keys['ArrowLeft']) currentVehicle.rotation.y += 0.03 * (speed > 0 ? 1 : -1);
+        if (keys['KeyD'] || keys['ArrowRight']) currentVehicle.rotation.y -= 0.03 * (speed > 0 ? 1 : -1);
+
+        // 更新仪表盘
+        document.getElementById('speed').innerText = Math.abs(Math.round(speed * 1000));
+
+        // 相机跟随
+        const relativeCameraOffset = new THREE.Vector3(0, 5, -10);
+        const cameraOffset = relativeCameraOffset.applyMatrix4(currentVehicle.matrixWorld);
+        camera.position.lerp(cameraOffset, 0.1);
+        camera.lookAt(currentVehicle.position);
+    }
+
+    // --- 动画循环 ---
+    function animate() {
+        requestAnimationFrame(animate);
+        updatePhysics();
+        renderer.render(scene, camera);
+    }
+    
+    // 适配移动端检测
+    if('ontouchstart' in window) {
+        document.getElementById('mobile-controls').style.display = 'flex';
+    }
+
+    animate();
+
+    // 窗口大小适配
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+</script>
+</body>
+</html>
