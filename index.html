@@ -72,8 +72,27 @@
 
 <script type="module">
     import * as THREE from 'three';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+// --- 修复补丁：处理旧版 GLTF 扩展 ---
+const loader = new GLTFLoader();
+
+// 告诉加载器：如果遇到这个扩展，不要报错，尝试兼容处理
+loader.register( parser => {
+    return {
+        name: "KHR_materials_pbrSpecularGlossiness",
+        getMaterialType: () => THREE.MeshStandardMaterial, // 映射到标准材质
+        extendMaterialParams: async ( materialIndex, materialParams ) => {
+            const parser = loader.parser;
+            const materialDef = parser.json.materials[ materialIndex ];
+            const extension = materialDef.extensions[ "KHR_materials_pbrSpecularGlossiness" ];
+            // 将旧版参数映射给 StandardMaterial
+            if ( extension.diffuseTexture ) materialParams.map = await parser.getDependency( 'texture', extension.diffuseTexture.index );
+            if ( extension.diffuseFactor ) materialParams.color = new THREE.Color().fromArray( extension.diffuseFactor );
+            return Promise.resolve();
+        }
+    };
+});
     // --- 场景设置 ---
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
